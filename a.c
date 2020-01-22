@@ -74,6 +74,8 @@ int main(){
 	_Bool no_move;
 
 	int sleeptime = 16384;
+
+	char copy_or_cut = 'c';
 set:
 	for(;;){
 		XNextEvent(display, &event);
@@ -158,7 +160,7 @@ set:
 						XClearArea(display, window, 0, 0, width, height, True);
 					}else{
 						// 白マス/黒マス切り替え　ではなく　移動
-						if(RNG(pressed.x, event.xmotion.x) + RNG(pressed.y, event.xmotion.y) > 2){
+						if(!no_move || RNG(pressed.x, event.xmotion.x - center.x) + RNG(pressed.y, event.xmotion.y - center.y) > 2){
 							center.x = event.xmotion.x - pressed.x;
 							center.y = event.xmotion.y - pressed.y;
 							no_move = False;
@@ -183,7 +185,7 @@ set:
 								for(int i = copy_area.i1; i < copy_area.i2; ++i)
 								for(int j = copy_area.j1; j < copy_area.j2; ++j){
 									set[pasting_pointer.i + i - copy_area.i1][pasting_pointer.j + j - copy_area.j1]
-									= copy[i][j];
+									|= copy[i][j];
 								}
 								select_mode = not_selecting;
 								XClearArea(display, window, 0, 0, width, height, True);
@@ -202,9 +204,8 @@ set:
 				break;
 			case KeyPress:
 				switch(XLookupKeysym(&event.xkey, 0)){
-					char key;
 					case 'x':
-						key = 'x';
+						copy_or_cut = 'x';
 					case 'c':
 						if(event.xkey.state & ControlMask){
 							if(select_mode == selected){
@@ -222,12 +223,13 @@ set:
 								for(int j = copy_area.j1; j <= copy_area.j2; ++j)
 								{
 									copy[i][j] = set[i][j];
-									if(key == 'x') set[i][j] = 0;
+									if(copy_or_cut == 'x') set[i][j] = 0;
 								}
 								select_mode = not_selecting;
 								XClearArea(display, window, 0, 0, width, height, True);
 							}
 						}
+						copy_or_cut = 'c';
 						break;
 					case 'v':
 						if(event.xkey.state & ControlMask){
@@ -326,6 +328,7 @@ run:
 						);
 				}
 			}
+			XFlush(display);
 			usleep(sleeptime);
 		}
 	}
