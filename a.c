@@ -11,8 +11,6 @@
 
 #define DIV(x, y) ((x) >= 0 ? (x) / (y) : -((-(x) - 1) / (y)) - 1)
 
-
-
 int main(){
 	Display *display = XOpenDisplay(NULL);
 	if(display == NULL){
@@ -58,10 +56,10 @@ int main(){
 	static char field[N][N];
 	static int count[N][N];
 
-	static char copy[N][N];
+	static char copy[2][N][N], copy_switch = 0;
 	struct{
-		int i1, i2;
-		int j1, j2;
+		int i, j;
+		int width, height;
 	} copy_area;
 	enum { not_selecting, selecting, selected, pasting } select_mode;
 	struct {
@@ -94,13 +92,14 @@ set:
 					if(INFIELD(i, j)){
 						_Bool flag = !set[i][j];
 						if(select_mode == selecting || select_mode == selected){
-							flag ^= IN(i, copy_area.i1, copy_area.i2) && IN(j, copy_area.j1, copy_area.j2);
+							flag ^= IN(i, copy_area.i, copy_area.i + copy_area.width) &&
+								IN(j, copy_area.j, copy_area.j + copy_area.height);
 						}else if(
 							select_mode == pasting &&
-							IN(copy_area.i1 + i - pasting_pointer.i, copy_area.i1, copy_area.i2 - 1) &&
-							IN(copy_area.j1 + j - pasting_pointer.j, copy_area.j1, copy_area.j2 - 1)
+							IN(i - pasting_pointer.i, 0, copy_area.width) &&
+							IN(j - pasting_pointer.j, 0, copy_area.height)
 						){
-							flag &= !copy[copy_area.i1 + i - pasting_pointer.i][copy_area.j1 + j - pasting_pointer.j];
+							flag &= !copy[copy_switch][i - pasting_pointer.i][j - pasting_pointer.j];
 						}
 						int size = scale - (scale >= 10);
 						if(flag) XFillRectangle(display, window, blackGC, center.x + i * scale, center.y + j * scale, size, size);
@@ -121,8 +120,9 @@ set:
 					if(event.xbutton.state & ControlMask){
 						// Ctrl を押しながらクリック
 						// 範囲選択を開始
-						copy_area.i1 = copy_area.i2 = DIV(event.xbutton.x - center.x, scale);
-						copy_area.j1 = copy_area.j2 = DIV(event.xbutton.y - center.y, scale);
+						copy_area.i = DIV(event.xbutton.x - center.x, scale);
+						copy_area.j = DIV(event.xbutton.y - center.y, scale);
+						copy_area.width = copy_area.height = 0;
 						select_mode = selecting;
 						XClearArea(display, window, 0, 0, width, height, True);
 					}else if(select_mode == pasting){
@@ -155,8 +155,8 @@ set:
 					// ドラッグ中に動いた
 					if(select_mode == selecting){
 						// 範囲選択
-						copy_area.i2 = DIV(event.xmotion.x - center.x, scale);
-						copy_area.j2 = DIV(event.xmotion.y - center.y, scale);
+						copy_area.width = DIV(event.xmotion.x - center.x, scale) - copy_area.i;
+						copy_area.height = DIV(event.xmotion.y - center.y, scale) - copy_area.j;
 						XClearArea(display, window, 0, 0, width, height, True);
 					}else{
 						// 白マス/黒マス切り替え　ではなく　移動
@@ -182,11 +182,9 @@ set:
 						}else if(no_move){
 							if(select_mode == pasting){
 								// 貼り付け
-								for(int i = copy_area.i1; i < copy_area.i2; ++i)
-								for(int j = copy_area.j1; j < copy_area.j2; ++j){
-									set[pasting_pointer.i + i - copy_area.i1][pasting_pointer.j + j - copy_area.j1]
-									|= copy[i][j];
-								}
+								for(int i = 0; i <= copy_area.width; ++i)
+									for(int j = 0; j <= copy_area.height; ++j)
+										set[pasting_pointer.i + i][pasting_pointer.j + j] |= copy[copy_switch][i][j];
 								select_mode = not_selecting;
 								XClearArea(display, window, 0, 0, width, height, True);
 							}else{
@@ -209,21 +207,19 @@ set:
 					case 'c':
 						if(event.xkey.state & ControlMask){
 							if(select_mode == selected){
-								if(copy_area.i1 > copy_area.i2){
-									int tmp = copy_area.i1;
-									copy_area.i1 = copy_area.i2;
-									copy_area.i2 = tmp;
+								if(copy_area.width < 0){
+									copy_area.i += copy_area.width;
+									copy_area.width = -copy_area.width;
 								}
-								if(copy_area.j1 > copy_area.j2){
-									int tmp = copy_area.j1;
-									copy_area.j1 = copy_area.j2;
-									copy_area.j2 = tmp;
+								if(copy_area.height < 0){
+									copy_area.j += copy_area.height;
+									copy_area.height = -copy_area.height;
 								}
-								for(int i = copy_area.i1; i <= copy_area.i2; ++i)
-								for(int j = copy_area.j1; j <= copy_area.j2; ++j)
+								for(int i = 0; i <= copy_area.width; ++i)
+								for(int j = 0; j <= copy_area.height; ++j)
 								{
-									copy[i][j] = set[i][j];
-									if(copy_or_cut == 'x') set[i][j] = 0;
+									copy[copy_switch][i][j] = set[copy_area.i + i][copy_area.j + j];
+									if(copy_or_cut == 'x') set[copy_area.i + i][copy_area.j + j] = 0;
 								}
 								select_mode = not_selecting;
 								XClearArea(display, window, 0, 0, width, height, True);
@@ -234,6 +230,48 @@ set:
 					case 'v':
 						if(event.xkey.state & ControlMask){
 							select_mode = pasting;
+							XClearArea(display, window, 0, 0, width, height, True);
+						}
+						break;
+					case 'a':
+						// 右回転
+						if((event.xkey.state & ControlMask) && select_mode == pasting){
+							for(int i = 0; i <= copy_area.width; ++i){
+								for(int j = 0; j <= copy_area.height; ++j){
+									copy[copy_switch ^ 1][copy_area.width - i][j] = copy[copy_switch][i][j];
+								}
+							}
+							copy_switch ^= 1;
+							XClearArea(display, window, 0, 0, width, height, True);
+						}
+						break;
+					case 'r':
+						// 右回転
+						if((event.xkey.state & ControlMask) && select_mode == pasting){
+							for(int i = 0; i <= copy_area.width; ++i){
+								for(int j = 0; j <= copy_area.height; ++j){
+									copy[copy_switch ^ 1][copy_area.height - j][i] = copy[copy_switch][i][j];
+								}
+							}
+							int tmp = copy_area.width;
+							copy_area.width = copy_area.height;
+							copy_area.height = tmp;
+							copy_switch ^= 1;
+							XClearArea(display, window, 0, 0, width, height, True);
+						}
+						break;
+					case 'l':
+						// 左回転
+						if((event.xkey.state & ControlMask) && select_mode == pasting){
+							for(int i = 0; i <= copy_area.width; ++i){
+								for(int j = 0; j <= copy_area.height; ++j){
+									copy[copy_switch ^ 1][j][copy_area.width - i] = copy[copy_switch][i][j];
+								}
+							}
+							int tmp = copy_area.width;
+							copy_area.width = copy_area.height;
+							copy_area.height = tmp;
+							copy_switch ^= 1;
 							XClearArea(display, window, 0, 0, width, height, True);
 						}
 						break;
