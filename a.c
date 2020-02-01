@@ -125,11 +125,8 @@ set:
 						copy_area.width = copy_area.height = 0;
 						select_mode = selecting;
 						XClearArea(display, window, 0, 0, width, height, True);
-					}else if(select_mode == pasting){
-						// Ctrl+V を押した後のクリック
-						// 貼り付け　または　移動
-						no_move = True;
 					}else{
+						// 貼り付け　または　移動
 						// 白マス/黒マス切り替え　または　移動
 						pressed.x = event.xbutton.x - center.x;
 						pressed.y = event.xbutton.y - center.y;
@@ -317,9 +314,6 @@ run:
 							);
 							XClearArea(display, window, 0, 0, width, height, True);
 							goto set;
-						case XK_Escape:
-							XDestroyWindow(display, window);
-							break;
 						case 's':
 							sleeptime *= 2;
 							break;
